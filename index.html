@@ -1,0 +1,1567 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bluestore Journal</title>
+<link rel="manifest" href="manifest.webmanifest">
+<style>
+:root{color-scheme:light dark;--bg:#f3f6fb;--card:#fff;--ink:#0f223f;--mute:#63758f;--line:#dde5f0;--blue:#1f5fd6;--blue2:#4c8dff;--on-blue:#fff;--ok:#0f7b4f;--owe:#b45309;--shadow:0 1px 2px rgba(15,34,63,.06),0 6px 18px rgba(15,34,63,.06)}
+@media(prefers-color-scheme:dark){:root{--bg:#0a1626;--card:#111f36;--ink:#e9f0fb;--mute:#93a5c0;--line:#22344f;--blue:#4c8dff;--blue2:#7db0ff;--on-blue:#06152b;--ok:#4ecb8d;--owe:#f0a44b;--shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.25)}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+h1{font-size:1.25rem;font-weight:800;letter-spacing:-.02em;margin:0}
+header,main,nav{max-width:640px;margin:0 auto;padding:12px 16px}
+header{display:flex;justify-content:space-between;align-items:center;gap:8px}
+header button{padding:8px 12px;font-size:.9rem}
+.brand{display:flex;align-items:center;gap:10px}
+button,input{font:inherit;color:inherit}
+input{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);transition:border-color .2s,box-shadow .2s}
+input:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px color-mix(in srgb,var(--blue) 25%,transparent)}
+button{padding:11px 16px;border:0;border-radius:10px;background:var(--blue);color:var(--on-blue);font-weight:650;cursor:pointer;transition:transform .12s,filter .2s}
+button:hover{filter:brightness(1.08)}button:active{transform:scale(.98)}
+button.ghost{background:transparent;color:var(--mute);border:1px solid var(--line)}
+:focus-visible{outline:3px solid var(--blue2);outline-offset:2px}
+.tabs{display:flex;gap:4px;padding:4px;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}
+.tabs button{flex:1;background:none;color:var(--mute);padding:9px 2px;font-size:.82rem}
+.tabs button.on{background:var(--blue);color:var(--on-blue)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:12px;box-shadow:var(--shadow);animation:rise .35s ease both}
+.row{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.sum{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:14px 0}
+.sum div{background:var(--card);border:1px solid var(--line);border-top:3px solid var(--blue);border-radius:12px;padding:10px 12px;box-shadow:var(--shadow)}
+.sum div:nth-child(2){border-top-color:var(--ok)}.sum div:nth-child(3),.sum div:only-child{border-top-color:var(--owe)}
+.sum div:only-child{grid-column:1/-1}
+.sum small{display:block;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em}
+.sum b{font-size:1.15rem;font-variant-numeric:tabular-nums}
+.chip{padding:2px 10px;border-radius:999px;font-size:.78rem;font-weight:700;background:color-mix(in srgb,currentColor 12%,transparent)}
+.ok{color:var(--ok)}.owe{color:var(--owe)}
+.item{display:grid;grid-template-columns:3fr 1fr 1.5fr;gap:6px;margin-bottom:6px}
+.err{color:var(--owe);margin:0;min-height:1.2em}.empty,small{color:var(--mute)}.empty{text-align:center;padding:24px 0}
+.lines{margin:2px 0}.actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.actions button{padding:7px 12px;font-size:.85rem}
+form{display:grid;gap:8px}
+@keyframes pop{from{transform:scale(0)}}
+.logo-sm{width:36px;height:36px;border-radius:50%;display:block}
+.stage{min-height:100vh;display:grid;place-items:center;padding:8px;background:#05070d}
+.ring{--ring:min(400px,calc(100vw - 16px));position:relative;width:var(--ring);height:var(--ring);display:grid;place-items:center}
+.ringsvg{position:absolute;inset:0;animation:rise .8s ease both}
+.ringsvg svg{display:block;width:100%;height:100%}
+.tick{stroke:#2a4a78;stroke-width:4.4;stroke-linecap:round;animation:sweep 3s linear infinite;animation-delay:calc(var(--i)*.05s - 3s)}
+@keyframes sweep{0%,6%{stroke:#00e5ff}30%{stroke:#1f6fa0}100%{stroke:#2a4a78}}
+.auth{position:relative;width:64%;display:grid;gap:9px;text-align:center;color:#fff;animation:rise .8s .3s ease both}
+.logo{width:clamp(44px,15vw,60px);aspect-ratio:1;border-radius:50%;margin:0 auto;display:block;box-shadow:0 0 0 2px rgba(0,229,255,.5),0 0 18px rgba(0,229,255,.35)}
+.auth small{color:#9fb6d8;font-size:.78rem;line-height:1.25}
+.auth input{padding:9px 14px;border-radius:999px;background:rgba(255,255,255,.04);border:1px solid rgba(76,141,255,.5);color:#fff;font-size:.9rem}
+.auth input::placeholder{color:#7f93b3}
+.auth input:focus{border-color:#00e5ff;box-shadow:0 0 0 3px rgba(0,229,255,.18)}
+.auth button{padding:9px;border-radius:999px;background:#00e5ff;color:#02131a;font-weight:800;box-shadow:0 0 18px rgba(0,229,255,.35)}
+.auth .err{color:#ff9f5a;font-size:.8rem;min-height:0}.auth .err:empty{display:none}
+.warn{border-left:4px solid var(--owe)}
+.gap{height:8px}
+.list-row{display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-top:1px solid var(--line)}
+.danger{color:var(--owe)!important;border-color:var(--owe)!important}
+.err.ok{color:var(--ok)}
+.sum.one div{border-top-color:var(--ok);grid-column:1/-1}
+.auth button.link{padding:2px 2px;background:none;box-shadow:none;color:#7dd3fc;font-size:.72rem;font-weight:600;white-space:nowrap}
+.links{display:flex;justify-content:center;gap:8px}
+.brand small{display:block;font-size:.68rem;line-height:1.1;color:var(--mute)}
+.loading{display:grid;gap:12px;justify-items:center;color:#9fb6d8}
+.stage .setup{max-width:360px;display:grid;gap:8px}
+.history{display:grid;gap:2px;margin-top:6px}.history[hidden]{display:none}
+.staff-row{display:grid;gap:6px;padding:10px 0;border-top:1px solid var(--line)}
+.shake{animation:shake .4s}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}}
+@keyframes shake{20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style></head>
+<body><div id="app"></div>
+<script>
+'use strict';
+
+/**
+ * @typedef {{name: string, qty: number, price: number, cost?: number}} LineItem
+ * @typedef {{day: string, amount: number, by?: string, note?: string}} Payment
+ * @typedef {{id: number, day: string, customer: string, phone: string, location?: string, room?: string, items: LineItem[], discount?: number, total: number, paid: number, payments?: Payment[], by?: string}} Sale
+ * @typedef {{id?: string, ownerUid: string, email: string, name: string, active: boolean}} StaffRecord
+ * @typedef {{id: number, name: string, qty: number, price: number, cost?: number}} StockItem
+ * @typedef {{sales: Sale[], stock: StockItem[]}} Vault
+ * @typedef {{salt: string, hash: string}} AuthRecord
+ * @typedef {{iv: string, data: string}} SealedData
+ * @typedef {{label: string, tone: string}} Status
+ */
+
+// ---------- constants ----------
+const STORE_NAME = 'Bluestore';
+const TAGLINE = 'We are here to make a difference not a profit';
+const KEYS = { auth: 'bs_auth', lock: 'bs_lock', vault: 'bs_vault', unlock: 'bs_unlock', email: 'bs_email', role: 'bs_role' };
+const FIREBASE_VERSION = '10.14.1';
+// Paste the values from Firebase console > Project settings > Your apps > Web app.
+// These identify your project; the security comes from your Firestore rules and your login.
+const FIREBASE_CONFIG = {
+  apiKey: 'PASTE_API_KEY',
+  authDomain: 'PASTE_PROJECT_ID.firebaseapp.com',
+  projectId: 'PASTE_PROJECT_ID',
+  appId: 'PASTE_APP_ID',
+};
+const cloudConfigured = () => !FIREBASE_CONFIG.apiKey.startsWith('PASTE');
+const PBKDF2_ITERATIONS = 200000;
+const MIN_PASSWORD_LENGTH = 8;
+const MAX_FAILED_LOGINS = 5;
+const LOCK_MINUTES = 15;
+const LOW_STOCK_LIMIT = 5;
+const AUTO_LOCK_MS = 2 * 60 * 1000;
+const RING_TICKS = 60;
+const PASSWORD_RULE = 'Use 8+ characters with upper case, lower case and a number.';
+const LOGO_PIXELS = 128;
+const LOGO_SRC = 'data:image/jpeg;base64,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';
+
+// ---------- small helpers ----------
+/** @param {string} selector @returns {any} */
+const $ = selector => document.querySelector(selector);
+
+/**
+ * Create an element. Props starting with "on" become event listeners.
+ * @param {string} tag
+ * @param {Object<string, any>} [props]
+ * @param {...(Node|string)} children
+ * @returns {any}
+ */
+function h(tag, props = {}, ...children) {
+  /** @type {any} */
+  const el = document.createElement(tag);
+  for (const [name, value] of Object.entries(props)) {
+    if (name.startsWith('on')) el.addEventListener(name.slice(2), value);
+    else el[name] = value;
+  }
+  el.append(...children);
+  return el;
+}
+
+/** @param {number} n */
+const money = n => Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/** @param {number} n */
+const roundMoney = n => Math.round(n * 100) / 100;
+/** @param {number} n */
+const roundQty = n => Math.round(n * 1000) / 1000;
+const today = () => new Date().toLocaleDateString('en-CA');
+/** @param {number} n days back from today */
+const daysAgo = n => { const d = new Date(); d.setDate(d.getDate() - n); return d.toLocaleDateString('en-CA'); };
+
+/**
+ * @param {string} placeholder
+ * @param {Object<string, any>} [extra]
+ */
+const numberInput = (placeholder, extra = {}) =>
+  h('input', { type: 'number', placeholder, min: 0, step: 'any', inputMode: 'decimal', ...extra });
+
+/** Stops a form from reloading the page when submitted. @param {Event} e */
+const ignoreSubmit = e => e.preventDefault();
+/** @param {string} className */
+const logoImg = className => h('img', { className, alt: 'Bluestore logo', src: LOGO_SRC });
+
+/** @param {HTMLElement} card @param {HTMLElement} error @param {string} message */
+function showError(card, error, message) {
+  error.textContent = message;
+  card.classList.remove('shake');
+  card.getBoundingClientRect();
+  card.classList.add('shake');
+}
+
+/** Show a message under a form: red for errors, green for success. @param {HTMLElement} el @param {string} text @param {boolean} [good] */
+function setMessage(el, text, good = false) {
+  el.textContent = text;
+  el.className = good ? 'err ok' : 'err';
+}
+
+// ---------- storage ----------
+const storage = {
+  /**
+   * @template T
+   * @param {string} key
+   * @param {T} fallback
+   * @returns {T}
+   */
+  read(key, fallback) {
+    try { return JSON.parse(localStorage.getItem(key) ?? 'null') ?? fallback; }
+    catch { return fallback; }
+  },
+  /** @param {string} key @param {any} value */
+  write(key, value) { localStorage.setItem(key, JSON.stringify(value)); },
+  /** @param {string} key */
+  remove(key) { localStorage.removeItem(key); },
+};
+
+/** @returns {AuthRecord | null} */
+const getCredentials = () => storage.read(KEYS.auth, null);
+
+// ---------- reading data saved by the older, phone-only version (encrypted with your old password) ----------
+/** @param {string} text */
+const encode = text => new TextEncoder().encode(text);
+/** @param {ArrayBuffer|Uint8Array} bytes */
+function toBase64(bytes) {
+  let binary = '';
+  for (const b of new Uint8Array(bytes)) binary += String.fromCharCode(b);
+  return btoa(binary);
+}
+/** @param {string} text */
+const fromBase64 = text => Uint8Array.from(atob(text), c => c.charCodeAt(0));
+
+/**
+ * One PBKDF2 pass gives 64 bytes: the first 32 verify the password, the last 32 are the encryption key.
+ * @param {string} password @param {Uint8Array} salt
+ * @returns {Promise<{verifier: string, keyBytes: Uint8Array}>}
+ */
+async function deriveKeys(password, salt) {
+  const base = await crypto.subtle.importKey('raw', encode(password), 'PBKDF2', false, ['deriveBits']);
+  const params = { name: 'PBKDF2', hash: 'SHA-256', salt: /** @type {BufferSource} */ (salt), iterations: PBKDF2_ITERATIONS };
+  const bits = new Uint8Array(await crypto.subtle.deriveBits(params, base, 512));
+  return { verifier: toBase64(bits.slice(0, 32)), keyBytes: bits.slice(32) };
+}
+
+/** @param {Uint8Array} keyBytes @returns {Promise<CryptoKey>} */
+const importAesKey = keyBytes =>
+  crypto.subtle.importKey('raw', /** @type {BufferSource} */ (keyBytes), 'AES-GCM', false, ['encrypt', 'decrypt']);
+
+/** @param {CryptoKey} key @param {SealedData} sealed @returns {Promise<any>} */
+async function unseal(key, sealed) {
+  const iv = /** @type {BufferSource} */ (fromBase64(sealed.iv));
+  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, /** @type {BufferSource} */ (fromBase64(sealed.data)));
+  return JSON.parse(new TextDecoder().decode(plain));
+}
+
+// ---------- cloud data (Firebase Firestore), kept in memory while signed in ----------
+/** @type {Vault} */
+let vault = { sales: [], stock: [] };
+/** Firebase modules and handles, loaded on first use. @type {any} */
+let cloud = null;
+/** The signed-in Firebase user. @type {any} */
+let user = null;
+/** The owner sees everything. Staff work on the owner's data with limited rights. @type {'owner' | 'staff'} */
+let role = 'owner';
+let ownerUid = '';
+let staffName = '';
+let locked = false;
+let justSignedIn = false;
+let syncState = '';
+let lastActive = Date.now();
+/** @type {(() => void)[]} */
+let listeners = [];
+/** What the cloud last told us, as JSON text per id, so only changes are sent. @type {Object<string, Map<number, string>>} */
+let synced = {};
+/** Costs live in their own owner-only collection, so staff can never read them. @type {Map<number, number>} */
+let costById = new Map();
+
+const isOwner = () => role === 'owner';
+const actorName = () => (isOwner() ? 'Owner' : staffName || 'Staff');
+
+/** @param {{id: number}[]} list @returns {Map<number, string>} */
+function jsonById(list) {
+  const map = new Map();
+  for (const item of list) map.set(item.id, JSON.stringify(item));
+  return map;
+}
+
+/** Load the Firebase libraries (saved by the service worker after the first visit). */
+async function loadCloud() {
+  if (cloud) return cloud;
+  const base = `https://www.gstatic.com/firebasejs/${FIREBASE_VERSION}/`;
+  const [app, auth, store] = await Promise.all(['firebase-app.js', 'firebase-auth.js', 'firebase-firestore.js'].map(file => import(base + file)));
+  const firebaseApp = app.initializeApp(FIREBASE_CONFIG);
+  let firestore;
+  try {
+    firestore = store.initializeFirestore(firebaseApp, { localCache: store.persistentLocalCache({ tabManager: store.persistentMultipleTabManager() }) });
+  } catch {
+    firestore = store.getFirestore(firebaseApp);
+  }
+  cloud = { auth: auth.getAuth(firebaseApp), db: firestore, a: auth, s: store, app };
+  return cloud;
+}
+
+/** @param {string} kind @param {number} id */
+const docRef = (kind, id) => cloud.s.doc(cloud.db, 'users', ownerUid, kind, String(id));
+
+/** @param {Error} err */
+function saveFailed(err) { alert(`Could not save to the cloud: ${err.message}`); }
+
+/** The documents to store, per collection. For the owner, costs are split off into their own collection. @returns {Object<string, any[]>} */
+function documents() {
+  /** @type {Object<string, any[]>} */
+  const docs = { sales: vault.sales, stock: [] };
+  if (isOwner()) docs.costs = [];
+  for (const item of vault.stock) {
+    if (!isOwner()) { docs.stock.push(item); continue; }
+    const { cost, ...rest } = item;
+    docs.stock.push(rest);
+    if (cost && cost > 0) docs.costs.push({ id: item.id, cost });
+  }
+  return docs;
+}
+
+/** Send only what changed since the cloud last told us. Works offline: changes wait and sync later. */
+function persist() {
+  if (!cloud || !user) return;
+  const docs = documents();
+  for (const kind of Object.keys(docs)) {
+    const before = synced[kind] || new Map();
+    const after = jsonById(docs[kind]);
+    for (const item of docs[kind]) {
+      const json = after.get(item.id) || '';
+      if (before.get(item.id) !== json) cloud.s.setDoc(docRef(kind, item.id), JSON.parse(json)).catch(saveFailed);
+    }
+    for (const id of before.keys()) {
+      if (!after.has(id)) cloud.s.deleteDoc(docRef(kind, id)).catch(saveFailed);
+    }
+    synced[kind] = after;
+  }
+}
+
+/** @returns {Sale[]} */
+const getSales = () => vault.sales;
+/** @returns {StockItem[]} */
+const getStock = () => vault.stock;
+/** @param {Sale[]} list */
+function saveSales(list) { vault.sales = list; persist(); }
+/** @param {StockItem[]} list */
+function saveStock(list) { vault.stock = list; persist(); }
+
+function showSyncState() {
+  const label = $('#sync');
+  if (label) label.textContent = syncState;
+}
+
+/** Redraw after a change from another phone, unless you are typing. */
+function refreshIfIdle() {
+  const active = document.activeElement;
+  if (!user || locked || (active && ['INPUT', 'TEXTAREA'].includes(active.tagName))) return;
+  main();
+}
+
+/** @param {any} doc */
+const dataOf = doc => doc.data();
+/** @param {{id: number}} a @param {{id: number}} b */
+const byId = (a, b) => a.id - b.id;
+
+function mergeCosts() {
+  for (const item of vault.stock) {
+    const cost = costById.get(item.id);
+    if (cost !== undefined) item.cost = cost;
+  }
+}
+
+/** Start listening to the shop's data. Resolves once everything has loaded. @returns {Promise<void>} */
+function openData() {
+  stopData();
+  const kinds = isOwner() ? ['sales', 'stock', 'costs'] : ['sales', 'stock'];
+  return new Promise((resolve, reject) => {
+    /** @type {Object<string, boolean>} */
+    const loaded = {};
+    for (const kind of kinds) {
+      const query = cloud.s.collection(cloud.db, 'users', ownerUid, kind);
+      listeners.push(cloud.s.onSnapshot(query, { includeMetadataChanges: true }, /** @param {any} snap */ snap => {
+        const changed = snap.docChanges().length > 0;
+        if (changed || !loaded[kind]) {
+          const docs = snap.docs.map(dataOf).sort(byId);
+          synced[kind] = jsonById(docs);
+          if (kind === 'sales') vault.sales = docs;
+          else if (kind === 'stock') vault.stock = docs;
+          else { costById = new Map(); for (const d of docs) costById.set(d.id, d.cost); }
+          mergeCosts();
+        }
+        syncState = snap.metadata.hasPendingWrites ? 'Saving...' : snap.metadata.fromCache && !navigator.onLine ? 'Offline' : 'Synced';
+        showSyncState();
+        if (!loaded[kind]) {
+          loaded[kind] = true;
+          if (kinds.every(k => loaded[k])) resolve();
+        } else if (changed && !snap.metadata.hasPendingWrites) {
+          refreshIfIdle();
+        }
+      }, /** @param {Error} err */ err => { syncState = 'Sync problem'; showSyncState(); reject(err); }));
+    }
+  });
+}
+
+function stopData() {
+  listeners.forEach(stop => stop());
+  listeners = [];
+  vault = { sales: [], stock: [] };
+  synced = {};
+  costById = new Map();
+  syncState = '';
+}
+
+// ---------- pure business helpers ----------
+/** @param {StockItem[]} list @param {string} name */
+const findItem = (list, name) => list.find(i => i.name.toLowerCase() === name.trim().toLowerCase());
+/** @param {Sale} sale */
+const balanceOf = sale => roundMoney(sale.total - sale.paid);
+/** @param {LineItem[]} lines */
+const linesTotal = lines => roundMoney(lines.reduce((sum, l) => sum + (l.qty || 0) * (l.price || 0), 0));
+/** Cost of a sold line: the cost saved with the sale, else the item's current cost (owner only). @param {LineItem} line */
+const costOfLine = line => line.cost || (isOwner() ? findItem(getStock(), line.name)?.cost || 0 : 0);
+/** Profit counts only items that have a cost price, minus any discount. @param {Sale} sale */
+const profitOf = sale => roundMoney(sale.items.reduce((sum, l) => { const cost = costOfLine(l); return sum + (cost ? (l.price - cost) * l.qty : 0); }, 0) - (sale.discount || 0));
+
+/** Every payment on a sale, including money recorded before payment history existed. @param {Sale} sale @returns {Payment[]} */
+function paymentLines(sale) {
+  const list = sale.payments || [];
+  const earlier = roundMoney(sale.paid - list.reduce((sum, p) => sum + p.amount, 0));
+  return [...(earlier !== 0 ? [{ day: sale.day, amount: earlier, note: 'Earlier payment' }] : []), ...list];
+}
+/** @param {Sale[]} sales */
+const statsOf = sales => sales.reduce((t, s) => ({ sold: t.sold + s.total, paid: t.paid + s.paid }), { sold: 0, paid: 0 });
+
+/** @param {Sale} sale @returns {Status} */
+function statusOf(sale) {
+  if (balanceOf(sale) <= 0) return { label: 'Paid in full', tone: 'ok' };
+  return { label: sale.paid > 0 ? 'Part paid' : 'Unpaid', tone: 'owe' };
+}
+
+/** @param {Sale} sale @returns {string} */
+function receiptText(sale) {
+  const balance = balanceOf(sale);
+  const payments = paymentLines(sale);
+  return [
+    `*${STORE_NAME}* receipt`, `Date: ${sale.day}`, `Customer: ${sale.customer}`, '',
+    ...sale.items.map(i => `${i.qty} x ${i.name} @ ${money(i.price)} = ${money(i.qty * i.price)}`), '',
+    ...(sale.discount ? [`Discount: -${money(sale.discount)}`] : []),
+    `Total: ${money(sale.total)}`, `Paid: ${money(sale.paid)}`,
+    ...(payments.length > 1 ? payments.map(p => `  ${p.day}: ${money(p.amount)}`) : []),
+    balance > 0 ? `Balance: ${money(balance)}` : 'Paid in full. Thank you!', '', TAGLINE,
+  ].join('\n');
+}
+
+/** Opens WhatsApp with the receipt. Numbers saved with a + country code open that chat directly. @param {Sale} sale */
+function shareReceipt(sale) {
+  const phone = (sale.phone || '').trim();
+  const digits = phone.startsWith('+') ? phone.replace(/\D/g, '') : '';
+  window.open(`https://wa.me/${digits}?text=${encodeURIComponent(receiptText(sale))}`, '_blank');
+}
+
+// ---------- business rules ----------
+/**
+ * Validate and save a sale, reducing stock. Returns an error message, or '' on success.
+ * @param {string} customer @param {string} phone @param {string} location @param {string} room
+ * @param {LineItem[]} lines @param {number} paid @param {number} discount
+ * @returns {string}
+ */
+function recordSale(customer, phone, location, room, lines, paid, discount) {
+  if (!customer) return 'Enter the customer name.';
+  if (lines.some(l => !l.name || !(l.qty > 0) || !(l.price >= 0))) return 'Check the name, quantity and price of each item.';
+  const subtotal = linesTotal(lines);
+  if (!(discount >= 0) || discount > subtotal) return 'The discount cannot be more than the items total.';
+  const total = roundMoney(subtotal - discount);
+  if (paid < 0 || paid > total) return 'Amount paid cannot be more than the total.';
+
+  const stockList = getStock();
+  /** @type {Object<number, number>} */
+  const needed = {};
+  for (const line of lines) {
+    const item = findItem(stockList, line.name);
+    if (!item) return `${line.name} is not in stock. Add it in the Stock tab first.`;
+    line.name = item.name;
+    if (item.cost) line.cost = item.cost;
+    needed[item.id] = (needed[item.id] || 0) + line.qty;
+    if (needed[item.id] > item.qty) return `Only ${item.qty} of ${item.name} left in stock.`;
+  }
+  for (const item of stockList) {
+    if (needed[item.id]) item.qty = roundQty(item.qty - needed[item.id]);
+  }
+  saveStock(stockList);
+  const by = actorName();
+  saveSales([...getSales(), {
+    id: Date.now(), day: today(), customer, phone, location, room, items: lines, discount, total, paid,
+    payments: paid > 0 ? [{ day: today(), amount: paid, by }] : [], by,
+  }]);
+  return '';
+}
+
+/** @param {number} saleId @param {number} amount @returns {boolean} */
+function recordPayment(saleId, amount) {
+  const all = getSales();
+  const sale = all.find(s => s.id === saleId);
+  if (!sale || !(amount > 0) || amount > balanceOf(sale)) return false;
+  sale.paid = roundMoney(sale.paid + amount);
+  sale.payments = [...(sale.payments || []), { day: today(), amount, by: actorName() }];
+  saveSales(all);
+  return true;
+}
+
+/**
+ * @param {number} saleId
+ * @param {{customer: string, phone: string, location: string, room: string, paid: number, discount: number}} fields
+ * @returns {string} error message, or '' on success
+ */
+function editSale(saleId, fields) {
+  const all = getSales();
+  const sale = all.find(s => s.id === saleId);
+  if (!sale) return 'Sale not found.';
+  if (!fields.customer) return 'Enter the customer name.';
+  const subtotal = linesTotal(sale.items);
+  if (!(fields.discount >= 0) || fields.discount > subtotal) return 'The discount cannot be more than the items total.';
+  const total = roundMoney(subtotal - fields.discount);
+  if (!(fields.paid >= 0) || fields.paid > total) return 'Amount paid must be between 0 and the total.';
+  const change = roundMoney(fields.paid - sale.paid);
+  const payments = [...(sale.payments || [])];
+  if (change !== 0) payments.push({ day: today(), amount: change, by: actorName(), note: 'Correction' });
+  Object.assign(sale, fields, { total, payments });
+  saveSales(all);
+  return '';
+}
+
+/** Delete a sale and put its items back into stock. @param {number} saleId */
+function deleteSale(saleId) {
+  const all = getSales();
+  const sale = all.find(s => s.id === saleId);
+  if (!sale) return;
+  const items = getStock();
+  for (const line of sale.items) {
+    const item = findItem(items, line.name);
+    if (item) item.qty = roundQty(item.qty + line.qty);
+  }
+  saveStock(items);
+  saveSales(all.filter(s => s.id !== saleId));
+}
+
+/**
+ * Add stock to an item (creating it if new) and/or set its selling or cost price.
+ * Returns an error message, or '' on success.
+ * @param {string} name @param {number} qty @param {number} price @param {number} cost
+ * @returns {string}
+ */
+function addStock(name, qty, price, cost) {
+  if (!name) return 'Enter the item name.';
+  const list = getStock();
+  const existing = findItem(list, name);
+  if (!existing && !(price > 0)) return 'Enter the selling price.';
+  if (!(qty > 0) && !(existing && (price > 0 || cost > 0))) return 'Enter how many you are adding.';
+  if (existing) {
+    if (qty > 0) existing.qty = roundQty(existing.qty + qty);
+    if (price > 0) existing.price = price;
+    if (cost > 0) existing.cost = cost;
+  } else {
+    list.push({ id: Date.now(), name, qty, price, ...(cost > 0 ? { cost } : {}) });
+  }
+  saveStock(list);
+  return '';
+}
+
+/** @param {string} name @param {number} count */
+function setStockCount(name, count) {
+  const list = getStock();
+  const item = findItem(list, name);
+  if (!item) return;
+  item.qty = count;
+  saveStock(list);
+}
+
+// ---------- accounts (Firebase Authentication) ----------
+/** @param {string} p */
+const isStrongPassword = p => p.length >= MIN_PASSWORD_LENGTH && /[a-z]/.test(p) && /[A-Z]/.test(p) && /\d/.test(p);
+
+/** @param {any} err @returns {string} */
+function authMessage(err) {
+  const code = String(err?.code || '');
+  if (['auth/invalid-credential', 'auth/wrong-password', 'auth/user-not-found', 'auth/invalid-email'].includes(code)) return 'Wrong email or password.';
+  if (code === 'auth/email-already-in-use') return 'That email already has an account. Sign in instead.';
+  if (code === 'auth/too-many-requests') return 'Too many attempts. Try again later.';
+  if (code === 'auth/network-request-failed') return 'No internet connection. Sign in once while online.';
+  if (code === 'auth/weak-password') return PASSWORD_RULE;
+  if (code === 'auth/admin-restricted-operation') return 'Sign-ups are switched off in Firebase. In Authentication, Settings, User actions, tick "Enable create (sign-up)", then try again.';
+  if (code === 'auth/operation-not-allowed') return 'Email sign-in is not turned on in Firebase yet.';
+  return err?.message || 'Something went wrong.';
+}
+
+/** Extra limit on top of Firebase's own: 5 wrong passwords locks sign-in for 15 minutes on this phone. @returns {string} */
+function lockoutMessage() {
+  const state = storage.read(KEYS.lock, { fails: 0, until: 0 });
+  const waitMs = state.until - Date.now();
+  return waitMs > 0 ? `Too many attempts. Try again in ${Math.ceil(waitMs / 60000)} minutes.` : '';
+}
+
+function recordFailure() {
+  const state = storage.read(KEYS.lock, { fails: 0, until: 0 });
+  state.fails += 1;
+  if (state.fails >= MAX_FAILED_LOGINS) {
+    state.fails = 0;
+    state.until = Date.now() + LOCK_MINUTES * 60000;
+  }
+  storage.write(KEYS.lock, state);
+}
+
+const clearFailures = () => storage.write(KEYS.lock, { fails: 0, until: 0 });
+
+/** @returns {AuthRecord | null} */
+const getUnlockRecord = () => storage.read(KEYS.unlock, null);
+
+/** Keep a salted hash of the password on this phone so the lock screen works offline. @param {string} password */
+async function rememberPassword(password) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  storage.write(KEYS.unlock, { salt: toBase64(salt), hash: (await deriveKeys(password, salt)).verifier });
+}
+
+/** @param {string} email @param {string} password @returns {Promise<string>} error message or '' */
+async function signIn(email, password) {
+  const blocked = lockoutMessage();
+  if (blocked) return blocked;
+  try {
+    await loadCloud();
+    justSignedIn = true;
+    await cloud.a.signInWithEmailAndPassword(cloud.auth, email, password);
+  } catch (err) {
+    justSignedIn = false;
+    const message = authMessage(err);
+    if (message.startsWith('Wrong')) recordFailure();
+    return message;
+  }
+  clearFailures();
+  await rememberPassword(password);
+  return '';
+}
+
+/** @param {string} email @param {string} password @returns {Promise<string>} error message or '' */
+async function createAccount(email, password) {
+  if (!isStrongPassword(password)) return PASSWORD_RULE;
+  try {
+    await loadCloud();
+    justSignedIn = true;
+    await cloud.a.createUserWithEmailAndPassword(cloud.auth, email, password);
+  } catch (err) {
+    justSignedIn = false;
+    return authMessage(err);
+  }
+  await rememberPassword(password);
+  return '';
+}
+
+/** Unlock the screen. Checked on this phone, so it works offline. @param {string} password @returns {Promise<string>} */
+async function unlock(password) {
+  const blocked = lockoutMessage();
+  if (blocked) return blocked;
+  const saved = getUnlockRecord();
+  let ok = false;
+  if (saved) {
+    ok = (await deriveKeys(password, fromBase64(saved.salt))).verifier === saved.hash;
+  } else {
+    try {
+      await cloud.a.reauthenticateWithCredential(user, cloud.a.EmailAuthProvider.credential(user.email, password));
+      await rememberPassword(password);
+      ok = true;
+    } catch { ok = false; }
+  }
+  if (!ok) { recordFailure(); return 'Wrong password.'; }
+  clearFailures();
+  locked = false;
+  lastActive = Date.now();
+  return '';
+}
+
+/** @param {string} current @param {string} next @param {string} repeat @returns {Promise<string>} error message or '' */
+async function changePassword(current, next, repeat) {
+  if (!user) return 'Please sign in again first.';
+  if (!isStrongPassword(next)) return PASSWORD_RULE;
+  if (next !== repeat) return 'The two new passwords do not match.';
+  try {
+    await cloud.a.reauthenticateWithCredential(user, cloud.a.EmailAuthProvider.credential(user.email, current));
+    await cloud.a.updatePassword(user, next);
+  } catch (err) {
+    const message = authMessage(err);
+    return message.startsWith('Wrong') ? 'Your current password is wrong.' : message;
+  }
+  await rememberPassword(next);
+  return '';
+}
+
+async function signOutUser() {
+  if (!navigator.onLine && !confirm('You are offline. Changes that have not synced yet could be lost. Sign out anyway?')) return;
+  await Promise.race([cloud.s.waitForPendingWrites(cloud.db), new Promise(resolve => setTimeout(resolve, 5000))]);
+  stopData();
+  await cloud.a.signOut(cloud.auth);
+}
+
+function lock() {
+  if (!user) return;
+  locked = true;
+  authView('locked');
+}
+
+// ---------- backup, restore and moving old data ----------
+const NOT_A_BACKUP = 'That file is not a Bluestore backup.';
+
+function downloadBackup() {
+  const backup = { app: 'bluestore', version: 2, sales: vault.sales, stock: vault.stock };
+  const url = URL.createObjectURL(new Blob([JSON.stringify(backup)], { type: 'application/json' }));
+  h('a', { href: url, download: `bluestore-backup-${today()}.json` }).click();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+/**
+ * Read a backup file. Older backups from the phone-only version are encrypted and need their password.
+ * @param {File | undefined} file @param {string} password
+ * @returns {Promise<{data?: Vault, message: string}>}
+ */
+async function readBackup(file, password) {
+  if (!file) return { message: 'Choose a backup file first.' };
+  /** @type {any} */
+  let backup;
+  try { backup = JSON.parse(await file.text()); } catch { return { message: NOT_A_BACKUP }; }
+  if (backup?.app !== 'bluestore') return { message: NOT_A_BACKUP };
+  if (Array.isArray(backup.sales)) return { data: { sales: backup.sales, stock: backup.stock || [] }, message: '' };
+  if (!backup.auth?.salt || !backup.vault?.data) return { message: NOT_A_BACKUP };
+  if (!password) return { message: 'This is an older encrypted backup. Enter the password it was saved with.' };
+  const { verifier, keyBytes } = await deriveKeys(password, fromBase64(backup.auth.salt));
+  if (verifier !== backup.auth.hash) return { message: 'Wrong password for this backup.' };
+  try {
+    const data = await unseal(await importAesKey(keyBytes), backup.vault);
+    return { data: { sales: data.sales || [], stock: data.stock || [] }, message: '' };
+  } catch {
+    return { message: 'The backup could not be opened.' };
+  }
+}
+
+/** Write sales and stock to the cloud (same ids are overwritten). Owner only. Needs a connection. @param {Vault} data */
+async function importToCloud(data) {
+  /** @type {Array<[string, any[]]>} */
+  const groups = [['sales', data.sales], ['stock', []], ['costs', []]];
+  for (const item of data.stock) {
+    const { cost, ...rest } = item;
+    groups[1][1].push(rest);
+    if (cost && cost > 0) groups[2][1].push({ id: item.id, cost });
+  }
+  let batch = cloud.s.writeBatch(cloud.db);
+  let count = 0;
+  for (const [kind, list] of groups) {
+    for (const item of list) {
+      batch.set(docRef(kind, item.id), JSON.parse(JSON.stringify(item)));
+      count += 1;
+      if (count % 400 === 0) { await batch.commit(); batch = cloud.s.writeBatch(cloud.db); }
+    }
+  }
+  await batch.commit();
+}
+
+const hasLocalData = () => Boolean(storage.read(KEYS.vault, null) && getCredentials());
+
+/** Move the encrypted data saved on this phone by the older version into the cloud. @param {string} password @returns {Promise<string>} */
+async function moveLocalData(password) {
+  const saved = getCredentials();
+  const sealed = storage.read(KEYS.vault, null);
+  if (!saved || !sealed) return 'No older data was found on this phone.';
+  if (!navigator.onLine) return 'Connect to the internet first.';
+  const { verifier, keyBytes } = await deriveKeys(password, fromBase64(saved.salt));
+  if (verifier !== saved.hash) return 'Wrong password. Use the password you used before the cloud upgrade.';
+  try {
+    const data = await unseal(await importAesKey(keyBytes), sealed);
+    const moved = { sales: data.sales || [], stock: data.stock || [] };
+    await importToCloud(moved);
+    storage.remove(KEYS.vault);
+    storage.remove(KEYS.auth);
+    return `Moved ${moved.sales.length} sales and ${moved.stock.length} items to the cloud.`;
+  } catch (err) {
+    return `Could not move the data: ${err instanceof Error ? err.message : 'unknown error'}`;
+  }
+}
+
+function watchActivity() {
+  const touch = () => { lastActive = Date.now(); };
+  document.addEventListener('pointerdown', touch);
+  document.addEventListener('keydown', touch);
+  const check = () => { if (user && !locked && Date.now() - lastActive > AUTO_LOCK_MS) lock(); };
+  setInterval(check, 10000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
+}
+
+// ---------- staff accounts (owner only; rights are enforced by the Firestore rules) ----------
+/** @returns {Promise<StaffRecord[]>} */
+async function listStaff() {
+  const query = cloud.s.query(cloud.s.collection(cloud.db, 'staff'), cloud.s.where('ownerUid', '==', user.uid));
+  const snap = await cloud.s.getDocs(query);
+  return snap.docs.map((/** @type {any} */ d) => ({ ...d.data(), id: d.id }));
+}
+
+/** @param {string} name @param {string} email @param {string} password @returns {Promise<string>} error message or '' */
+async function createStaff(name, email, password) {
+  if (!name) return 'Enter the staff member\'s name.';
+  if (!/^\S+@\S+\.\S+$/.test(email)) return 'Enter a valid email address.';
+  if (!isStrongPassword(password)) return PASSWORD_RULE;
+  if (!navigator.onLine) return 'Connect to the internet first.';
+  /** @type {any} */
+  let helper = null;
+  try {
+    // A second Firebase app creates the account, so you stay signed in as the owner.
+    helper = cloud.app.initializeApp(FIREBASE_CONFIG, `staff-${Date.now()}`);
+    const helperAuth = cloud.a.getAuth(helper);
+    const created = await cloud.a.createUserWithEmailAndPassword(helperAuth, email, password);
+    await cloud.s.setDoc(cloud.s.doc(cloud.db, 'staff', created.user.uid), { ownerUid: user.uid, email, name, active: true });
+    await cloud.a.signOut(helperAuth);
+    return '';
+  } catch (err) {
+    return authMessage(err);
+  } finally {
+    if (helper) cloud.app.deleteApp(helper).catch(() => {});
+  }
+}
+
+/** @param {string} staffId @param {boolean} active */
+const setStaffActive = (staffId, active) => cloud.s.updateDoc(cloud.s.doc(cloud.db, 'staff', staffId), { active });
+/** @param {string} staffId */
+const removeStaff = staffId => cloud.s.deleteDoc(cloud.s.doc(cloud.db, 'staff', staffId));
+
+/** Work out whether this login is the owner or a staff member. @param {string} uid */
+async function loadRole(uid) {
+  /** @type {StaffRecord | null} */
+  let profile = null;
+  try {
+    const snap = await cloud.s.getDoc(cloud.s.doc(cloud.db, 'staff', uid));
+    profile = snap.exists() ? snap.data() : null;
+    storage.write(KEYS.role, { uid, profile });
+  } catch {
+    /** @type {{uid: string, profile: StaffRecord | null} | null} */
+    const saved = storage.read(KEYS.role, /** @type {any} */ (null));
+    if (saved && saved.uid === uid) profile = saved.profile;
+  }
+  if (!profile || profile.ownerUid === uid) return { role: /** @type {'owner'} */ ('owner'), ownerUid: uid, name: '', blocked: false };
+  return { role: /** @type {'staff'} */ ('staff'), ownerUid: profile.ownerUid, name: profile.name, blocked: !profile.active };
+}
+
+// ---------- downloads and ZIP/Excel files (built in the app, no libraries) ----------
+const encoder = new TextEncoder();
+
+/** @param {Uint8Array[]} parts */
+function concatBytes(parts) {
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+  let at = 0;
+  for (const part of parts) { out.set(part, at); at += part.length; }
+  return out;
+}
+
+/** @param {Uint8Array} bytes @param {string} name @param {string} type */
+function downloadFile(bytes, name, type) {
+  const url = URL.createObjectURL(new Blob([/** @type {BlobPart} */ (bytes)], { type }));
+  h('a', { href: url, download: name }).click();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
+  let c = n;
+  for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+  return c >>> 0;
+});
+
+/** @param {Uint8Array} bytes */
+function crc32(bytes) {
+  let c = 0xFFFFFFFF;
+  for (const b of bytes) c = CRC_TABLE[(c ^ b) & 255] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+
+/** A ZIP file with stored (uncompressed) entries. @param {{name: string, data: Uint8Array}[]} files @returns {Uint8Array} */
+function zipFiles(files) {
+  /** @type {Uint8Array[]} */
+  const body = [];
+  /** @type {Uint8Array[]} */
+  const directory = [];
+  let offset = 0;
+  for (const { name, data } of files) {
+    const nameBytes = encoder.encode(name);
+    const crc = crc32(data);
+    const local = new DataView(new ArrayBuffer(30));
+    local.setUint32(0, 0x04034b50, true); local.setUint16(4, 20, true); local.setUint16(6, 0x0800, true);
+    local.setUint16(12, 0x21, true); local.setUint32(14, crc, true); local.setUint32(18, data.length, true);
+    local.setUint32(22, data.length, true); local.setUint16(26, nameBytes.length, true);
+    body.push(new Uint8Array(local.buffer), nameBytes, data);
+    const entry = new DataView(new ArrayBuffer(46));
+    entry.setUint32(0, 0x02014b50, true); entry.setUint16(4, 20, true); entry.setUint16(6, 20, true); entry.setUint16(8, 0x0800, true);
+    entry.setUint16(14, 0x21, true); entry.setUint32(16, crc, true); entry.setUint32(20, data.length, true);
+    entry.setUint32(24, data.length, true); entry.setUint16(28, nameBytes.length, true); entry.setUint32(42, offset, true);
+    directory.push(new Uint8Array(entry.buffer), nameBytes);
+    offset += 30 + nameBytes.length + data.length;
+  }
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true);
+  end.setUint32(12, directory.reduce((n, d) => n + d.length, 0), true); end.setUint32(16, offset, true);
+  return concatBytes([...body, ...directory, new Uint8Array(end.buffer)]);
+}
+
+/** @param {string} text */
+const xmlText = text => text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const XML_HEADER = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+const SHEET_NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+const REL_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+
+/** @param {(string | number)[][]} rows @param {number[]} widths @param {number[]} moneyColumns */
+function sheetXml(rows, widths, moneyColumns) {
+  const cols = widths.map((width, i) => `<col min="${i + 1}" max="${i + 1}" width="${width}" customWidth="1"/>`).join('');
+  const body = rows.map((row, r) => `<row r="${r + 1}">${row.map((value, c) => {
+    const ref = `${String.fromCharCode(65 + c)}${r + 1}`;
+    if (typeof value === 'number') return `<c r="${ref}"${moneyColumns.includes(c) ? ' s="2"' : ''}><v>${value}</v></c>`;
+    return `<c r="${ref}" t="inlineStr"${r === 0 ? ' s="1"' : ''}><is><t xml:space="preserve">${xmlText(String(value))}</t></is></c>`;
+  }).join('')}</row>`).join('');
+  return `${XML_HEADER}<worksheet xmlns="${SHEET_NS}"><cols>${cols}</cols><sheetData>${body}</sheetData></worksheet>`;
+}
+
+/** @param {{name: string, rows: (string | number)[][], widths: number[], money: number[]}[]} sheets @returns {Uint8Array} */
+function buildXlsx(sheets) {
+  const files = [
+    ['[Content_Types].xml', `${XML_HEADER}<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}</Types>`],
+    ['_rels/.rels', `${XML_HEADER}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${REL_NS}/officeDocument" Target="xl/workbook.xml"/></Relationships>`],
+    ['xl/workbook.xml', `${XML_HEADER}<workbook xmlns="${SHEET_NS}" xmlns:r="${REL_NS}"><sheets>${sheets.map((sheet, i) => `<sheet name="${xmlText(sheet.name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets></workbook>`],
+    ['xl/_rels/workbook.xml.rels', `${XML_HEADER}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="${REL_NS}/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')}<Relationship Id="rId${sheets.length + 1}" Type="${REL_NS}/styles" Target="styles.xml"/></Relationships>`],
+    ['xl/styles.xml', `${XML_HEADER}<styleSheet xmlns="${SHEET_NS}"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="4" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`],
+    ...sheets.map((sheet, i) => [`xl/worksheets/sheet${i + 1}.xml`, sheetXml(sheet.rows, sheet.widths, sheet.money)]),
+  ];
+  return zipFiles(files.map(([name, text]) => ({ name, data: encoder.encode(text) })));
+}
+
+/** Download all sales, payments and stock as an Excel file. Owner only. */
+function exportExcel() {
+  const sales = getSales().slice().sort((a, b) => a.id - b.id);
+  const salesRows = [['Date', 'Customer', 'Phone', 'Location', 'Room', 'Items', 'Subtotal', 'Discount', 'Total', 'Paid', 'Balance', 'Status', 'Sold by', 'Profit'],
+    ...sales.map(s => [s.day, s.customer, s.phone || '', s.location || '', s.room || '', s.items.map(i => `${i.qty} x ${i.name} @ ${money(i.price)}`).join('; '),
+      roundMoney(s.total + (s.discount || 0)), s.discount || 0, s.total, s.paid, balanceOf(s), statusOf(s).label, s.by || '', profitOf(s)])];
+  const paymentRows = [['Date', 'Customer', 'Amount', 'Received by', 'Note'],
+    ...sales.flatMap(s => paymentLines(s).map(p => [p.day, s.customer, p.amount, p.by || '', p.note || '']))];
+  const stockRows = [['Item', 'In stock', 'Selling price', 'Cost price', 'Value at selling price'],
+    ...getStock().map(i => [i.name, i.qty, i.price, i.cost || 0, roundMoney(i.qty * i.price)])];
+  const bytes = buildXlsx([
+    { name: 'Sales', rows: salesRows, widths: [12, 22, 16, 16, 8, 40, 12, 10, 12, 12, 12, 14, 12, 12], money: [6, 7, 8, 9, 10, 13] },
+    { name: 'Payments', rows: paymentRows, widths: [12, 22, 12, 14, 18], money: [2] },
+    { name: 'Stock', rows: stockRows, widths: [26, 10, 14, 12, 20], money: [2, 3, 4] },
+  ]);
+  downloadFile(bytes, `bluestore-export-${today()}.xlsx`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+}
+
+// ---------- PDF receipts (built in the app, with your logo) ----------
+/** Keep only characters a basic PDF font can show. @param {string} text */
+const pdfSafe = text => text.replace(/[^\x20-\x7E\xA0-\xFF]/g, '?');
+/** @param {string} text */
+const latin1 = text => Uint8Array.from(text, ch => ch.charCodeAt(0) & 255);
+
+/** @param {string} text @param {number} width @returns {string[]} */
+function wrapText(text, width) {
+  /** @type {string[]} */
+  const lines = [];
+  let line = '';
+  for (const word of text.split(/\s+/).filter(Boolean)) {
+    let rest = word;
+    while (rest.length > width) {
+      if (line) { lines.push(line); line = ''; }
+      lines.push(rest.slice(0, width));
+      rest = rest.slice(width);
+    }
+    if (line && `${line} ${rest}`.length > width) { lines.push(line); line = rest; }
+    else line = line ? `${line} ${rest}` : rest;
+  }
+  if (line) lines.push(line);
+  return lines.length ? lines : [''];
+}
+
+/** An 80 mm wide receipt as a PDF file. @param {Sale} sale @returns {Uint8Array} */
+function receiptPdf(sale) {
+  const WIDTH = 226, MARGIN = 14, COLS = 40, LOGO = 56;
+  /** @type {{text: string, bold: boolean, size: number, center: boolean}[]} */
+  const rows = [];
+  /** @param {string} text @param {{bold?: boolean, size?: number, center?: boolean}} [style] */
+  const add = (text, style = {}) => rows.push({ text: pdfSafe(text), bold: Boolean(style.bold), size: style.size || 8, center: Boolean(style.center) });
+  /** @param {string} left @param {string} right @param {boolean} [bold] */
+  const pair = (left, right, bold = false) => add(left.slice(0, COLS - right.length - 1).padEnd(COLS - right.length) + right, { bold });
+  const rule = () => add('-'.repeat(COLS));
+  const balance = balanceOf(sale);
+  const payments = paymentLines(sale);
+
+  add(STORE_NAME, { bold: true, size: 14, center: true });
+  wrapText(TAGLINE, 50).forEach(line => add(line, { size: 6.5, center: true }));
+  rule();
+  add(`Date: ${sale.day}`);
+  wrapText(`Customer: ${sale.customer}`, COLS).forEach(line => add(line));
+  if (sale.phone) add(`Phone: ${sale.phone}`);
+  const place = [sale.location, sale.room ? `Room ${sale.room}` : ''].filter(Boolean).join(', ');
+  if (place) wrapText(`Place: ${place}`, COLS).forEach(line => add(line));
+  rule();
+  for (const item of sale.items) {
+    wrapText(item.name, COLS).forEach(line => add(line));
+    pair(`  ${item.qty} x ${money(item.price)}`, money(item.qty * item.price));
+  }
+  rule();
+  if (sale.discount) { pair('Subtotal', money(sale.total + sale.discount)); pair('Discount', `-${money(sale.discount)}`); }
+  pair('TOTAL', money(sale.total), true);
+  pair('Paid', money(sale.paid));
+  if (payments.length > 1) payments.forEach(p => pair(`  ${p.day}`, money(p.amount)));
+  if (balance > 0) pair('BALANCE DUE', money(balance), true);
+  else add('PAID IN FULL', { bold: true, center: true });
+  rule();
+  wrapText('Thank you for shopping with us.', COLS).forEach(line => add(line, { center: true }));
+  if (sale.by) add(`Served by ${sale.by}`, { size: 6.5, center: true });
+
+  const height = Math.ceil(MARGIN * 2 + LOGO + 8 + rows.reduce((sum, row) => sum + row.size + 4, 0));
+  let y = height - MARGIN - LOGO - 8;
+  const logoX = (WIDTH - LOGO) / 2;
+  let content = `q ${LOGO} 0 0 ${LOGO} ${logoX} ${height - MARGIN - LOGO} cm /Im1 Do Q\n`;
+  for (const row of rows) {
+    y -= row.size + 4;
+    const x = row.center ? Math.max(MARGIN, (WIDTH - row.text.length * 0.6 * row.size) / 2) : MARGIN;
+    content += `BT /${row.bold ? 'F2' : 'F1'} ${row.size} Tf ${x.toFixed(2)} ${y.toFixed(2)} Td (${row.text.replace(/[\\()]/g, '\\$&')}) Tj ET\n`;
+  }
+
+  const jpeg = fromBase64(LOGO_SRC.split(',')[1]);
+  /** @type {Uint8Array[]} */
+  const parts = [];
+  /** @type {number[]} */
+  const offsets = [];
+  let length = 0;
+  /** @param {Uint8Array} bytes */
+  const push = bytes => { parts.push(bytes); length += bytes.length; };
+  /** @param {number} id @param {string} body */
+  const object = (id, body) => { offsets[id] = length; push(latin1(`${id} 0 obj\n${body}\nendobj\n`)); };
+
+  push(latin1('%PDF-1.4\n'));
+  object(1, '<< /Type /Catalog /Pages 2 0 R >>');
+  object(2, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>');
+  object(3, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${WIDTH} ${height}] /Contents 4 0 R /Resources << /Font << /F1 5 0 R /F2 6 0 R >> /XObject << /Im1 7 0 R >> >> >>`);
+  offsets[4] = length;
+  push(latin1(`4 0 obj\n<< /Length ${content.length} >>\nstream\n${content}\nendstream\nendobj\n`));
+  object(5, '<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>');
+  object(6, '<< /Type /Font /Subtype /Type1 /BaseFont /Courier-Bold /Encoding /WinAnsiEncoding >>');
+  offsets[7] = length;
+  push(latin1(`7 0 obj\n<< /Type /XObject /Subtype /Image /Width ${LOGO_PIXELS} /Height ${LOGO_PIXELS} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpeg.length} >>\nstream\n`));
+  push(jpeg);
+  push(latin1('\nendstream\nendobj\n'));
+  const xrefAt = length;
+  const entries = [1, 2, 3, 4, 5, 6, 7].map(id => `${String(offsets[id]).padStart(10, '0')} 00000 n \n`).join('');
+  push(latin1(`xref\n0 8\n0000000000 65535 f \n${entries}trailer\n<< /Size 8 /Root 1 0 R >>\nstartxref\n${xrefAt}\n%%EOF`));
+  return concatBytes(parts);
+}
+
+/** Share the receipt PDF (for example to WhatsApp), or download it. @param {Sale} sale */
+async function sharePdf(sale) {
+  const name = `receipt-${sale.customer.replace(/\W+/g, '-')}-${sale.day}.pdf`;
+  const bytes = receiptPdf(sale);
+  const file = new File([/** @type {BlobPart} */ (bytes)], name, { type: 'application/pdf' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: `${STORE_NAME} receipt` }); return; }
+    catch (err) { if (err instanceof Error && err.name === 'AbortError') return; }
+  }
+  downloadFile(bytes, name, 'application/pdf');
+}
+
+// ---------- install on home screen and offline ----------
+/** @type {any} */
+let installPrompt = null;
+
+function setupInstall() {
+  window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installPrompt = e; });
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+
+// ---------- login screen ----------
+/**
+ * Ring of ticks around the login form; CSS sweeps a bright highlight around them.
+ * @returns {string}
+ */
+const ringSvg = () => {
+  const ticks = Array.from({ length: RING_TICKS }, (_, i) =>
+    `<line class="tick" style="--i:${i}" x1="0" y1="-83" x2="0" y2="-95" transform="rotate(${(360 / RING_TICKS) * i})"/>`);
+  return `<svg viewBox="-100 -100 200 200" aria-hidden="true">${ticks.join('')}</svg>`;
+};
+
+/** @param {string} text */
+function loadingView(text) {
+  $('#app').replaceChildren(h('div', { className: 'stage' }, h('div', { className: 'loading' }, logoImg('logo'), h('small', {}, text))));
+}
+
+/** @param {string} title @param {string} text @param {(() => void) | null} retry */
+function messageView(title, text, retry) {
+  $('#app').replaceChildren(h('div', { className: 'stage' }, h('section', { className: 'card setup' },
+    logoImg('logo'), h('strong', {}, title), h('p', { className: 'note' }, text),
+    ...(retry ? [h('button', { onclick: retry }, 'Try again')] : []))));
+}
+
+/** @param {'signin' | 'signup' | 'locked'} mode */
+function authView(mode) {
+  const email = h('input', { type: 'email', placeholder: 'Email', autocomplete: 'username', inputMode: 'email', value: storage.read(KEYS.email, '') });
+  const password = h('input', { type: 'password', placeholder: 'Password', autocomplete: mode === 'signup' ? 'new-password' : 'current-password' });
+  const error = h('p', { className: 'err' });
+  const card = h('div', { className: 'auth' });
+  const labels = { signin: 'Sign in', signup: 'Create account', locked: 'Unlock' };
+  const button = h('button', { onclick: () => submit() }, labels[mode]);
+
+  const submit = async () => {
+    if (!crypto.subtle) { error.textContent = 'Open this page through Acode preview (localhost) to use login.'; return; }
+    const address = email.value.trim();
+    if (mode !== 'locked' && !/^\S+@\S+\.\S+$/.test(address)) { showError(card, error, 'Enter a valid email address.'); return; }
+    button.disabled = true;
+    const message = mode === 'locked' ? await unlock(password.value) : mode === 'signup' ? await createAccount(address, password.value) : await signIn(address, password.value);
+    button.disabled = false;
+    if (message) { showError(card, error, message); return; }
+    if (mode === 'locked') main();
+    else storage.write(KEYS.email, address);
+  };
+  const forgot = async () => {
+    const address = email.value.trim();
+    if (!address) { showError(card, error, 'Type your email first.'); return; }
+    try { await loadCloud(); await cloud.a.sendPasswordResetEmail(cloud.auth, address); } catch { /* the message below is the same either way */ }
+    error.textContent = 'If that email has an account, a reset link was sent.';
+  };
+  password.addEventListener('keydown', /** @param {KeyboardEvent} e */ e => { if (e.key === 'Enter') submit(); });
+
+  /** @param {string} label @param {() => void} onclick */
+  const link = (label, onclick) => h('button', { type: 'button', className: 'link', onclick }, label);
+  const links = mode === 'signin' ? [link('Create account', () => authView('signup')), link('Forgot?', forgot)]
+    : mode === 'signup' ? [link('I already have an account', () => authView('signin'))]
+      : [link('Sign out', signOutUser)];
+
+  card.append(
+    logoImg('logo'),
+    ...(mode === 'locked' ? [h('small', {}, `Locked. Welcome back${user?.email ? `, ${user.email}` : ''}.`)] : [email]),
+    password, button, h('div', { className: 'links' }, ...links), error);
+  $('#app').replaceChildren(h('div', { className: 'stage' },
+    h('div', { className: 'ring' }, h('div', { className: 'ringsvg', innerHTML: ringSvg() }), card)));
+}
+
+// ---------- app shell ----------
+let currentTab = 'journal';
+let currentDay = today();
+let searchText = '';
+let reportDays = 7;
+
+const TABS = [['journal', 'Journal'], ['stock', 'Stock'], ['owing', 'Owing'], ['reports', 'Reports'], ['settings', 'Settings']];
+/** Staff do not get the Reports tab. */
+const tabsFor = () => (isOwner() ? TABS : TABS.filter(([key]) => key !== 'reports'));
+
+function main() {
+  if (!tabsFor().some(([key]) => key === currentTab)) currentTab = 'journal';
+  /** @type {Object<string, () => void>} */
+  const views = { journal: journalView, stock: stockView, owing: owingView, reports: reportsView, settings: settingsView };
+  $('#app').replaceChildren(
+    h('header', {}, h('div', { className: 'brand' }, logoImg('logo-sm'), h('div', {}, h('h1', {}, STORE_NAME), h('small', { id: 'sync' }, syncState))),
+      h('button', { className: 'ghost', onclick: () => { lock(); } }, 'Lock')),
+    h('nav', {}, h('div', { className: 'tabs' }, ...tabsFor().map(([key, label]) =>
+      h('button', { className: key === currentTab ? 'on' : '', onclick: () => { currentTab = key; main(); } }, label)))),
+    h('main', { id: 'view' }));
+  views[currentTab]();
+}
+
+/** @param {string} label @param {() => void} onclick */
+const ghostButton = (label, onclick) => h('button', { className: 'ghost', onclick }, label);
+
+/** @param {string} label @param {number} amount */
+const statBox = (label, amount) => h('div', {}, h('small', {}, label), h('b', {}, money(amount)));
+
+/** @param {Sale[]} sales */
+const summaryBoxes = sales => {
+  const t = statsOf(sales);
+  return [statBox('Sales', t.sold), statBox('Collected', t.paid), statBox('Owing', t.sold - t.paid)];
+};
+
+// ---------- sales cards ----------
+/** @param {Sale} sale @param {() => void} reload */
+function askPayment(sale, reload) {
+  const answer = prompt(`Amount received (balance ${money(balanceOf(sale))})`);
+  if (answer === null) return;
+  if (!recordPayment(sale.id, Number(answer))) { alert('Enter an amount up to the balance.'); return; }
+  reload();
+}
+
+/** @param {Sale} sale @param {() => void} reload */
+function confirmDelete(sale, reload) {
+  if (!confirm(`Delete the sale for ${sale.customer}? Its items go back into stock.`)) return;
+  deleteSale(sale.id);
+  reload();
+}
+
+/** @param {Sale} sale @param {() => void} reload @param {HTMLElement} card */
+function saleEditForm(sale, reload, card) {
+  const customer = h('input', { value: sale.customer, placeholder: 'Customer name' });
+  const phone = h('input', { value: sale.phone || '', placeholder: 'Phone', type: 'tel' });
+  const place = h('input', { value: sale.location || '', placeholder: 'Location' });
+  const room = h('input', { value: sale.room || '', placeholder: 'Room number' });
+  const discount = numberInput('Discount', { value: sale.discount || '' });
+  const paid = numberInput('Amount paid', { value: sale.paid });
+  const error = h('p', { className: 'err' });
+  const save = () => {
+    const message = editSale(sale.id, {
+      customer: customer.value.trim(), phone: phone.value.trim(), location: place.value.trim(), room: room.value.trim(),
+      paid: +paid.value || 0, discount: +discount.value || 0,
+    });
+    if (message) error.textContent = message;
+    else reload();
+  };
+  const form = h('section', { className: 'card' }, h('strong', {}, `Edit sale (items total ${money(linesTotal(sale.items))})`),
+    h('form', { onsubmit: ignoreSubmit }, customer, phone, place, room, discount, paid,
+      h('button', { type: 'button', onclick: save }, 'Save changes'),
+      ghostButton('Cancel', () => form.replaceWith(card)), error),
+    h('small', {}, 'To change the items, delete this sale and enter it again.'));
+  return form;
+}
+
+/** @param {Sale} sale @param {() => void} reload */
+function saleCard(sale, reload) {
+  const balance = balanceOf(sale);
+  const status = statusOf(sale);
+  const details = [sale.day, sale.phone, sale.location, sale.room ? `Room ${sale.room}` : '', sale.by ? `Sold by ${sale.by}` : ''].filter(Boolean).join(', ');
+  const history = h('div', { className: 'history', hidden: true }, ...paymentLines(sale).map(p =>
+    h('small', {}, `${p.day}: ${money(p.amount)}${p.by ? `, ${p.by}` : ''}${p.note ? ` (${p.note})` : ''}`)));
+  const card = h('article', { className: 'card' },
+    h('div', { className: 'row' }, h('strong', {}, sale.customer), h('span', { className: `chip ${status.tone}` }, status.label)),
+    h('p', { className: 'lines' }, sale.items.map(i => `${i.qty} x ${i.name} @ ${money(i.price)}`).join(', ')),
+    h('small', {}, details),
+    h('div', { className: 'row' },
+      h('span', {}, `Total ${money(sale.total)}${sale.discount ? ` (after ${money(sale.discount)} discount)` : ''}, paid ${money(sale.paid)}`),
+      balance > 0 ? h('strong', { className: 'owe' }, `Balance ${money(balance)}`) : ''),
+    h('div', { className: 'actions' },
+      ghostButton('PDF', () => { sharePdf(sale); }),
+      ghostButton('WhatsApp', () => shareReceipt(sale)),
+      ...(balance > 0 ? [ghostButton('Add payment', () => askPayment(sale, reload))] : []),
+      ...(sale.paid > 0 ? [ghostButton('History', () => { history.hidden = !history.hidden; })] : []),
+      ...(isOwner() ? [ghostButton('Edit', () => card.replaceWith(saleEditForm(sale, reload, card))),
+        h('button', { className: 'ghost danger', onclick: () => confirmDelete(sale, reload) }, 'Delete')] : [])),
+    history);
+  return card;
+}
+
+// ---------- journal ----------
+function lowStockNotice() {
+  const low = getStock().filter(i => i.qty <= LOW_STOCK_LIMIT);
+  if (!low.length) return '';
+  return h('div', { className: 'card warn' }, h('strong', {}, 'Low stock'),
+    h('p', { className: 'lines' }, low.map(i => `${i.name} (${i.qty <= 0 ? 'out' : i.qty + ' left'})`).join(', ')));
+}
+
+/** Sales shown in the journal: search results across all days, or the chosen day. @returns {Sale[]} */
+function journalSales() {
+  const all = getSales().slice().reverse();
+  if (!searchText) return all.filter(s => s.day === currentDay);
+  return all.filter(s => [s.customer, s.phone, s.location, s.room, ...s.items.map(i => i.name)]
+    .some(text => (text || '').toLowerCase().includes(searchText)));
+}
+
+function journalView() {
+  const isToday = currentDay === today();
+  const summary = h('div', { className: 'sum' });
+  const results = h('div');
+  const showResults = () => {
+    const sales = journalSales();
+    const empty = searchText ? 'No matching sales.' : isToday ? 'No sales yet today. Add your first entry above.' : 'No sales recorded on this day.';
+    summary.replaceChildren(...summaryBoxes(sales));
+    results.replaceChildren(...(sales.length ? sales.map(s => saleCard(s, journalView)) : [h('p', { className: 'empty' }, empty)]));
+  };
+  const search = h('input', { type: 'search', placeholder: 'Search customer, phone or item', value: searchText,
+    oninput: () => { searchText = search.value.trim().toLowerCase(); showResults(); } });
+  const dateInput = h('input', { type: 'date', value: currentDay, max: today(), onchange: () => { currentDay = dateInput.value || today(); journalView(); } });
+  $('#view').replaceChildren(search, h('div', { className: 'gap' }), dateInput, summary, lowStockNotice(),
+    ...(isToday ? [newSaleForm()] : []), results);
+  showResults();
+}
+
+/** @param {boolean} showCount */
+const stockSuggestions = showCount =>
+  h('datalist', { id: 'stocklist' }, ...getStock().map(s => h('option', { value: s.name, label: showCount ? `${s.qty} left, ${money(s.price || 0)}` : '' })));
+
+function newSaleForm() {
+  const rows = h('div');
+  const summary = h('strong', {}, 'Total 0.00, balance 0.00');
+  const error = h('p', { className: 'err' });
+  const customer = h('input', { placeholder: 'Customer name' });
+  const phone = h('input', { placeholder: 'Phone, e.g. +234... (optional)', type: 'tel' });
+  const locationInput = h('input', { placeholder: 'Location' });
+  const roomInput = h('input', { placeholder: 'Room number' });
+  const discount = isOwner() ? numberInput('Discount (optional)') : null;
+  const paid = numberInput('Amount paid');
+  const discountValue = () => (discount ? +discount.value || 0 : 0);
+
+  /** @returns {LineItem[]} */
+  const readLines = () => [...rows.children].map(row => ({
+    name: row.nameInput.value.trim(), qty: +row.qtyInput.value, price: +row.priceInput.value,
+  }));
+  const refreshSummary = () => {
+    const total = Math.max(0, linesTotal(readLines()) - discountValue());
+    summary.textContent = `Total ${money(total)}, balance ${money(Math.max(0, total - (+paid.value || 0)))}`;
+  };
+  const addRow = () => {
+    const nameInput = h('input', { placeholder: 'Item' });
+    nameInput.setAttribute('list', 'stocklist');
+    const qtyInput = numberInput('Qty', { value: 1 });
+    const priceInput = numberInput('Price', { readOnly: !isOwner() });
+    const row = h('div', { className: 'item', oninput: refreshSummary }, nameInput, qtyInput, priceInput);
+    Object.assign(row, { nameInput, qtyInput, priceInput });
+    nameInput.addEventListener('input', () => {
+      const item = findItem(getStock(), nameInput.value);
+      if (item && item.price) priceInput.value = String(item.price);
+    });
+    rows.append(row);
+  };
+  const save = () => {
+    const message = recordSale(customer.value.trim(), phone.value.trim(), locationInput.value.trim(), roomInput.value.trim(), readLines(), +paid.value || 0, discountValue());
+    if (message) error.textContent = message;
+    else journalView();
+  };
+
+  paid.addEventListener('input', refreshSummary);
+  if (discount) discount.addEventListener('input', refreshSummary);
+  addRow();
+  return h('section', { className: 'card' }, h('strong', {}, 'New entry'),
+    h('form', { onsubmit: ignoreSubmit },
+      customer, phone, locationInput, roomInput, rows, stockSuggestions(true),
+      ghostButton('Add another item', addRow),
+      ...(discount ? [discount] : []), paid, summary, h('button', { type: 'button', onclick: save }, 'Save entry'), error));
+}
+
+// ---------- stock ----------
+/** @param {StockItem} item */
+function stockCard(item) {
+  const cost = isOwner() && item.cost ? `, cost ${money(item.cost)}` : '';
+  const price = item.price ? `${money(item.price)} each${cost}` : 'No price set';
+  const remaining = item.qty <= 0 ? 'Out of stock' : `${item.qty} left`;
+  const correct = () => {
+    const answer = prompt(`Set the correct count for ${item.name}`, String(item.qty));
+    if (answer === null || answer === '' || !(Number(answer) >= 0)) return;
+    setStockCount(item.name, Number(answer));
+    stockView();
+  };
+  return h('article', { className: 'card' },
+    h('div', { className: 'row' }, h('strong', {}, item.name), h('span', { className: `chip ${item.qty > LOW_STOCK_LIMIT ? 'ok' : 'owe'}` }, remaining)),
+    h('small', {}, price),
+    ...(isOwner() ? [h('div', { className: 'actions' }, ghostButton('Correct count', correct))] : []));
+}
+
+function stockView() {
+  const items = getStock();
+  const cards = items.length ? items.map(stockCard) : [h('p', { className: 'empty' }, isOwner() ? 'No items yet. Add your first item above.' : 'No items yet. The owner adds the stock.')];
+  if (!isOwner()) { $('#view').replaceChildren(...cards); return; }
+  const name = h('input', { placeholder: 'Item name' });
+  name.setAttribute('list', 'stocklist');
+  const qty = numberInput('Quantity added');
+  const price = numberInput('Selling price per item');
+  const cost = numberInput('Cost price (optional)');
+  const error = h('p', { className: 'err' });
+  const save = () => {
+    const message = addStock(name.value.trim(), +qty.value, +price.value, +cost.value);
+    if (message) error.textContent = message;
+    else stockView();
+  };
+  $('#view').replaceChildren(
+    h('section', { className: 'card' }, h('strong', {}, 'Add or restock an item'),
+      h('form', { onsubmit: ignoreSubmit },
+        name, stockSuggestions(false), qty, price, cost,
+        h('button', { type: 'button', onclick: save }, 'Save stock'), error),
+      h('small', {}, 'Typing an item you already have adds to its count. Enter only a new price to change its price.')),
+    ...cards);
+}
+
+// ---------- owing ----------
+function owingView() {
+  const sales = getSales().filter(s => balanceOf(s) > 0);
+  const owed = sales.reduce((sum, s) => sum + balanceOf(s), 0);
+  $('#view').replaceChildren(
+    h('div', { className: 'sum' }, statBox('Total owed', owed)),
+    ...(sales.length ? sales.map(s => saleCard(s, owingView)) : [h('p', { className: 'empty' }, 'Nobody owes you. All sales are paid in full.')]));
+}
+
+// ---------- reports ----------
+const PERIODS = [[7, '7 days'], [30, '30 days'], [0, 'All time']];
+
+/** Rows of "label, value" inside a card. @param {string} title @param {[string, string][]} rows @param {string} empty */
+const listCard = (title, rows, empty) => h('section', { className: 'card' }, h('strong', {}, title),
+  ...(rows.length ? rows.map(([a, b]) => h('div', { className: 'list-row' }, h('span', {}, a), h('b', {}, b))) : [h('p', { className: 'empty' }, empty)]));
+
+function reportsView() {
+  const cutoff = reportDays ? daysAgo(reportDays - 1) : '';
+  const sales = getSales().filter(s => s.day >= cutoff);
+  const profit = roundMoney(sales.reduce((sum, s) => sum + profitOf(s), 0));
+
+  /** @type {Object<string, {qty: number, revenue: number}>} */
+  const byItem = {};
+  for (const sale of sales) {
+    for (const line of sale.items) {
+      const row = byItem[line.name] || (byItem[line.name] = { qty: 0, revenue: 0 });
+      row.qty = roundQty(row.qty + line.qty);
+      row.revenue = roundMoney(row.revenue + line.qty * line.price);
+    }
+  }
+  /** @type {[string, string][]} */
+  const best = Object.entries(byItem).sort((a, b) => b[1].qty - a[1].qty).slice(0, 5)
+    .map(([name, r]) => [name, `${r.qty} sold, ${money(r.revenue)}`]);
+
+  /** @type {Object<string, number>} */
+  const owed = {};
+  for (const sale of getSales()) {
+    if (balanceOf(sale) > 0) owed[sale.customer] = roundMoney((owed[sale.customer] || 0) + balanceOf(sale));
+  }
+  /** @type {[string, string][]} */
+  const debtors = Object.entries(owed).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, amount]) => [name, money(amount)]);
+
+  $('#view').replaceChildren(
+    h('div', { className: 'tabs' }, ...PERIODS.map(([days, label]) =>
+      h('button', { className: days === reportDays ? 'on' : '', onclick: () => { reportDays = Number(days); reportsView(); } }, String(label)))),
+    h('div', { className: 'sum' }, ...summaryBoxes(sales)),
+    h('div', { className: 'sum one' }, statBox('Profit', profit)),
+    h('small', {}, 'Profit counts only items that have a cost price.'),
+    h('div', { className: 'gap' }),
+    listCard('Best sellers', best, 'No sales in this period.'),
+    listCard('Who owes you most (all time)', debtors, 'Nobody owes you.'));
+}
+
+// ---------- settings ----------
+/** The owner's staff list and the form to add staff. */
+function staffSection() {
+  const list = h('div', {}, h('small', {}, 'Loading staff...'));
+  const message = h('p', { className: 'err' });
+  const name = h('input', { placeholder: 'Staff name' });
+  const email = h('input', { type: 'email', placeholder: 'Staff email', autocomplete: 'off' });
+  const password = h('input', { type: 'password', placeholder: 'Temporary password', autocomplete: 'new-password' });
+
+  /** @param {() => Promise<unknown>} action */
+  const run = async action => {
+    try { await action(); } catch (err) { setMessage(message, err instanceof Error ? err.message : 'Something went wrong.'); }
+    show();
+  };
+  const show = async () => {
+    try {
+      const members = await listStaff();
+      list.replaceChildren(...(members.length ? members.map(m => h('div', { className: 'staff-row' },
+        h('div', {}, h('strong', {}, m.name), h('small', {}, ` ${m.email}${m.active ? '' : ' (turned off)'}`)),
+        h('div', { className: 'actions' },
+          ghostButton(m.active ? 'Turn off' : 'Turn on', () => run(() => setStaffActive(m.id || '', !m.active))),
+          ghostButton('Reset password', () => run(async () => {
+            await cloud.a.sendPasswordResetEmail(cloud.auth, m.email);
+            setMessage(message, `A reset link was sent to ${m.email}.`, true);
+          })),
+          h('button', { className: 'ghost danger', onclick: () => { if (confirm(`Remove ${m.name}? They will no longer be able to open the shop data.`)) run(() => removeStaff(m.id || '')); } }, 'Remove')))) : [h('small', {}, 'No staff yet.')]));
+    } catch (err) {
+      list.replaceChildren(h('small', {}, `Could not load staff: ${err instanceof Error ? err.message : 'unknown error'}`));
+    }
+  };
+  const add = async () => {
+    setMessage(message, 'Creating the account...', true);
+    const result = await createStaff(name.value.trim(), email.value.trim(), password.value);
+    if (result) { setMessage(message, result); return; }
+    [name, email, password].forEach(input => { input.value = ''; });
+    setMessage(message, 'Staff account created. Give them the email and temporary password so they can sign in.', true);
+    show();
+  };
+  show();
+  return h('section', { className: 'card' }, h('strong', {}, 'Staff'),
+    h('small', {}, 'Staff can record sales and take payments. They cannot delete or edit sales, give discounts, change prices or stock, see costs or profit, or open reports. Firebase enforces this on its servers.'),
+    list,
+    h('form', { onsubmit: ignoreSubmit }, name, email, password, h('button', { type: 'button', onclick: add }, 'Add staff member'), message));
+}
+
+function settingsView() {
+  const moveMessage = h('p', { className: 'err' });
+  const oldPassword = h('input', { type: 'password', placeholder: 'Password you used before the cloud upgrade', autocomplete: 'off' });
+  const move = async () => {
+    setMessage(moveMessage, 'Moving your data...', true);
+    const message = await moveLocalData(oldPassword.value);
+    const done = message.startsWith('Moved');
+    setMessage(moveMessage, message, done);
+    if (done) setTimeout(settingsView, 1500);
+  };
+
+  const backupMessage = h('p', { className: 'err' });
+  const file = h('input', { type: 'file', accept: '.json,application/json' });
+  const backupPassword = h('input', { type: 'password', placeholder: 'Password (only for older encrypted backups)', autocomplete: 'off' });
+  const restore = async () => {
+    const { data, message } = await readBackup(file.files[0], backupPassword.value);
+    if (!data) { setMessage(backupMessage, message); return; }
+    if (!navigator.onLine) { setMessage(backupMessage, 'Connect to the internet first.'); return; }
+    setMessage(backupMessage, 'Restoring...', true);
+    try {
+      await importToCloud(data);
+      setMessage(backupMessage, `Restored ${data.sales.length} sales and ${data.stock.length} items.`, true);
+    } catch (err) {
+      setMessage(backupMessage, `Could not restore: ${err instanceof Error ? err.message : 'unknown error'}`);
+    }
+  };
+
+  const current = h('input', { type: 'password', placeholder: 'Current password', autocomplete: 'current-password' });
+  const next = h('input', { type: 'password', placeholder: 'New password', autocomplete: 'new-password' });
+  const again = h('input', { type: 'password', placeholder: 'Repeat new password', autocomplete: 'new-password' });
+  const passwordMessage = h('p', { className: 'err' });
+  const change = async () => {
+    const message = await changePassword(current.value, next.value, again.value);
+    setMessage(passwordMessage, message || 'Password changed.', !message);
+    if (!message) [current, next, again].forEach(input => { input.value = ''; });
+  };
+
+  const install = installPrompt
+    ? h('button', { onclick: () => installPrompt.prompt() }, 'Install app')
+    : h('small', {}, 'To install: open the browser menu and choose "Add to Home screen". This works best from the hosted web address.');
+  const who = isOwner() ? 'owner' : `staff member ${staffName}`;
+
+  $('#view').replaceChildren(
+    h('section', { className: 'card' }, h('strong', {}, 'Account'),
+      h('small', {}, `Signed in as ${user ? user.email : ''} (${who}). Your data syncs to the shop's private Firebase project and works offline.`),
+      h('div', { className: 'actions' }, ghostButton('Sign out', () => { signOutUser(); }), ghostButton('Lock now', lock))),
+    ...(isOwner() ? [staffSection()] : []),
+    ...(isOwner() && hasLocalData() ? [h('section', { className: 'card' }, h('strong', {}, 'Move data from this phone'),
+      h('small', {}, 'Your earlier sales and stock are still saved on this phone. Move them to the cloud once.'),
+      oldPassword, h('button', { onclick: move }, 'Move to the cloud'), moveMessage)] : []),
+    ...(isOwner() ? [
+      h('section', { className: 'card' }, h('strong', {}, 'Export to Excel'),
+        h('small', {}, 'Downloads one Excel file with your sales, payments and stock.'),
+        h('button', { onclick: exportExcel }, 'Download Excel file')),
+      h('section', { className: 'card' }, h('strong', {}, 'Backup and restore'),
+        h('small', {}, 'The backup file is not encrypted, so keep it somewhere private. Restoring adds the backup to your cloud data; items with the same id are overwritten.'),
+        h('button', { onclick: downloadBackup }, 'Download backup'),
+        file, backupPassword, ghostButton('Restore from backup', restore), backupMessage)] : []),
+    h('section', { className: 'card' }, h('strong', {}, 'Change password'),
+      h('form', { onsubmit: ignoreSubmit }, current, next, again, h('button', { type: 'button', onclick: change }, 'Change password'), passwordMessage)),
+    h('section', { className: 'card' }, h('strong', {}, 'Security'),
+      h('small', {}, `Only people you add can read or change the shop data; Firebase enforces this on its servers. The app locks itself after ${AUTO_LOCK_MS / 60000} minutes without use, and unlocking works offline.`)),
+    h('section', { className: 'card' }, h('strong', {}, 'Install'), install));
+}
+
+// ---------- start ----------
+/** @param {any} firebaseUser */
+async function handleUser(firebaseUser) {
+  if (!firebaseUser) {
+    user = null;
+    locked = false;
+    role = 'owner';
+    ownerUid = '';
+    staffName = '';
+    stopData();
+    authView('signin');
+    return;
+  }
+  user = firebaseUser;
+  const fresh = justSignedIn;
+  justSignedIn = false;
+  loadingView('Syncing your data...');
+  const access = await loadRole(firebaseUser.uid);
+  if (access.blocked) {
+    alert('The owner has turned off your access. Please speak to them.');
+    await cloud.a.signOut(cloud.auth);
+    return;
+  }
+  role = access.role;
+  ownerUid = access.ownerUid;
+  staffName = access.name;
+  try {
+    await openData();
+  } catch (err) {
+    messageView('Could not load your data', err instanceof Error ? err.message : 'Check your internet connection and your Firestore rules.', () => location.reload());
+    return;
+  }
+  if (isOwner()) persist();
+  lastActive = Date.now();
+  locked = !fresh;
+  if (fresh) { currentTab = 'journal'; currentDay = today(); searchText = ''; }
+  if (locked) authView('locked'); else main();
+}
+
+async function start() {
+  if (!cloudConfigured()) {
+    messageView('Cloud setup needed', 'Open index.html and paste your Firebase settings into FIREBASE_CONFIG near the top, then reload this page.', null);
+    return;
+  }
+  loadingView('Starting...');
+  try {
+    await loadCloud();
+  } catch {
+    messageView('Could not load the cloud library', 'Connect to the internet once so the app can download it. After that it also starts offline.', () => location.reload());
+    return;
+  }
+  cloud.a.onAuthStateChanged(cloud.auth, handleUser);
+}
+
+start();
+watchActivity();
+setupInstall();
+</script></body></html>

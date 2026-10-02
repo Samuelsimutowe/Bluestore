@@ -1,0 +1,88 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // The owner of the shop data is the user whose id is in the path.
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    // A staff member is listed in /staff/<their id> by the owner, and must be switched on.
+    function isStaffOf(uid) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/staff/$(request.auth.uid))
+        && get(/databases/$(database)/documents/staff/$(request.auth.uid)).data.ownerUid == uid
+        && get(/databases/$(database)/documents/staff/$(request.auth.uid)).data.active == true;
+    }
+
+    function validSale() {
+      let d = request.resource.data;
+      return d.customer is string && d.customer.size() > 0 && d.customer.size() <= 100
+        && d.total is number && d.paid is number
+        && d.paid >= 0 && d.paid <= d.total
+        && d.items is list && d.items.size() >= 1 && d.items.size() <= 50;
+    }
+
+    function validStock() {
+      let d = request.resource.data;
+      return d.name is string && d.name.size() > 0 && d.name.size() <= 100
+        && d.qty is number && d.qty >= 0
+        && d.price is number && d.price >= 0;
+    }
+
+    // Sales: owner can do everything. Staff can read, add sales, and add payments to existing sales.
+    match /users/{uid}/sales/{saleId} {
+      allow read: if isOwner(uid) || isStaffOf(uid);
+      allow create: if (isOwner(uid) || isStaffOf(uid)) && validSale();
+      allow update: if (isOwner(uid) && validSale())
+        || (isStaffOf(uid) && validSale()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paid', 'payments'])
+            && request.resource.data.paid >= resource.data.paid);
+      allow delete: if isOwner(uid);
+    }
+
+    // Stock: owner manages it. Staff can read it, and can only lower a quantity (when they sell).
+    match /users/{uid}/stock/{itemId} {
+      allow read: if isOwner(uid) || isStaffOf(uid);
+      allow create: if isOwner(uid) && validStock();
+      allow update: if (isOwner(uid) && validStock())
+        || (isStaffOf(uid) && validStock()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['qty'])
+            && request.resource.data.qty <= resource.data.qty);
+      allow delete: if isOwner(uid);
+    }
+
+    // Cost prices: owner only, so staff can never read them.
+    match /users/{uid}/costs/{itemId} {
+      allow read, delete: if isOwner(uid);
+      allow create, update: if isOwner(uid)
+        && request.resource.data.cost is number
+        && request.resource.data.cost >= 0;
+    }
+
+    // Staff list. Each record says which owner the staff member works for.
+    match /staff/{staffUid} {
+      allow read: if signedIn()
+        && (request.auth.uid == staffUid || resource.data.ownerUid == request.auth.uid);
+      allow create: if signedIn()
+        && request.auth.uid != staffUid
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.name is string
+        && request.resource.data.email is string
+        && request.resource.data.active is bool;
+      allow update: if signedIn()
+        && resource.data.ownerUid == request.auth.uid
+        && request.resource.data.ownerUid == request.auth.uid;
+      allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
+    }
+
+    // Everything else is closed.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
